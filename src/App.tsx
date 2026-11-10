@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { analyzeCss, compareSpecificity, formatSpecificity, type Analysis, type SelectorMatch } from './lib/analyze';
+import { analyzeCss, compareSpecificity, formatSpecificity, type Analysis } from './lib/analyze';
 
 type Example = { name: string; html: string; css: string; note: string };
 const examples: Example[] = [
