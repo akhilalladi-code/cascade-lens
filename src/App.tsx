@@ -27,7 +27,37 @@ const previewScript = `(() => {
       if (node.classList.length) part += '.' + [...node.classList].slice(0, 2).join('.');
       path.unshift(part); node = node.parentElement;
     }
-    send({ type: 'select', selector: path.join(' > '), tag: target.tagName.toLowerCase(), computed });
+    const matchedSelectors = [];
+    const splitSelectors = (text) => {
+      const result = []; let start = 0, depth = 0, quote = '';
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (quote) { if (ch === quote && text[i - 1] !== '\\\\') quote = ''; continue; }
+        if (ch === '"' || ch === "'") { quote = ch; continue; }
+        if (ch === '(' || ch === '[') depth++;
+        else if (ch === ')' || ch === ']') depth--;
+        else if (ch === ',' && depth === 0) { result.push(text.slice(start, i).trim()); start = i + 1; }
+      }
+      result.push(text.slice(start).trim());
+      return result.filter(Boolean);
+    };
+    const visitRules = (rules) => {
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSStyleRule) {
+          for (const selector of splitSelectors(rule.selectorText)) {
+            try { if (target.matches(selector)) matchedSelectors.push(selector); } catch {}
+          }
+        } else if (rule.cssRules) {
+          if (rule instanceof CSSMediaRule && !matchMedia(rule.conditionText).matches) continue;
+          if (typeof CSSSupportsRule !== 'undefined' && rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
+          try { visitRules(rule.cssRules); } catch {}
+        }
+      }
+    };
+    for (const sheet of Array.from(document.styleSheets)) {
+      try { visitRules(sheet.cssRules); } catch {}
+    }
+    send({ type: 'select', selector: path.join(' > '), tag: target.tagName.toLowerCase(), computed, matchedSelectors });
   }, true);
   send({ type: 'ready' });
 })();`;
@@ -41,7 +71,7 @@ function specificityLabel(s: [number, number, number]) { return <span className=
 export default function App() {
   const [html, setHtml] = useState(initial.html);
   const [css, setCss] = useState(initial.css);
-  const [selected, setSelected] = useState<{ selector: string; tag: string; computed: Record<string, string> } | null>(null);
+  const [selected, setSelected] = useState<{ selector: string; tag: string; computed: Record<string, string>; matchedSelectors: string[] } | null>(null);
   const [viewport, setViewport] = useState('wide');
   const [activeTab, setActiveTab] = useState<'html' | 'css'>('css');
   const [rightTab, setRightTab] = useState<'styles' | 'rules' | 'diagnostics'>('styles');
@@ -52,16 +82,12 @@ export default function App() {
   const frame = useRef<HTMLIFrameElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const analysis: Analysis = useMemo(() => analyzeCss(css, selected ? { matches: selector => {
-    try {
-      const doc = frame.current?.contentDocument;
-      const node = doc?.querySelector(selected.selector.split(' > ').at(-1) || '');
-      return Boolean(node?.matches(selector));
-    } catch { return false; }
+    return selected.matchedSelectors.includes(selector);
   } } : undefined), [css, selected]);
   const onMessage = useCallback((event: MessageEvent) => {
     if (event.source !== frame.current?.contentWindow) return;
     if (!event.data || event.data.source !== 'cascade-lens-preview') return;
-    if (event.data.type === 'select') setSelected({ selector: event.data.selector, tag: event.data.tag, computed: event.data.computed || {} });
+    if (event.data.type === 'select') setSelected({ selector: event.data.selector, tag: event.data.tag, computed: event.data.computed || {}, matchedSelectors: event.data.matchedSelectors || [] });
   }, []);
   useEffect(() => { window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage); }, [onMessage]);
   const computedEntries = useMemo(() => Object.entries(selected?.computed || {}).filter(([key]) => !query || key.toLowerCase().includes(query.toLowerCase())).sort(([a], [b]) => a.localeCompare(b)), [selected, query]);
