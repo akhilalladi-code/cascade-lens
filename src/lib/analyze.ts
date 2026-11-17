@@ -72,13 +72,18 @@ export function analyzeCss(css: string, selected?: { matches(selector: string): 
   try {
     const root = postcss.parse(css || '');
     root.walkRules((rule: Rule) => {
-      ruleCount++;
       const atRule: string[] = [];
       let parent = rule.parent;
+      let insideKeyframes = false;
       while (parent && parent.type !== 'root') {
-        if (parent.type === 'atrule') atRule.unshift('@' + parent.name + (parent.params ? ' ' + parent.params : ''));
+        if (parent.type === 'atrule') {
+          if (parent.name.toLowerCase().endsWith('keyframes')) insideKeyframes = true;
+          atRule.unshift('@' + parent.name + (parent.params ? ' ' + parent.params : ''));
+        }
         parent = parent.parent;
       }
+      if (insideKeyframes) return;
+      ruleCount++;
       let parsed: string[] = [];
       try {
         selectorParser(list => { parsed = list.nodes.map(n => n.toString().trim()).filter(Boolean); }).processSync(rule.selector);
@@ -86,13 +91,14 @@ export function analyzeCss(css: string, selected?: { matches(selector: string): 
         warnings.push('A selector could not be parsed: ' + rule.selector);
       }
       const declarations: SelectorMatch['declarations'] = [];
-      rule.walkDecls(decl => {
+      rule.nodes?.forEach(node => {
+        if (node.type !== 'decl') return;
         declarationCount++;
         order++;
         declarations.push({
-          property: decl.prop,
-          value: decl.value,
-          important: Boolean(decl.important),
+          property: node.prop,
+          value: node.value,
+          important: Boolean(node.important),
           order,
           atRule
         });
@@ -110,5 +116,8 @@ export function analyzeCss(css: string, selected?: { matches(selector: string): 
   }
   if (css.includes('@import')) warnings.push('@import rules may not load in the isolated preview.');
   if (css.includes('::')) warnings.push('Pseudo-element styles are listed when parseable but cannot be selected directly in the preview.');
+  if (/@(?:-[\\w]+-)?keyframes\\b/i.test(css)) warnings.push('Keyframe steps are rendered by the browser and are excluded from element-selector matching.');
+  if (/@layer\\b/i.test(css)) warnings.push('Cascade layer context is shown, but layer precedence is not independently simulated; computed values come from the browser.');
+  if (/(^|[,{]\\s*)&/.test(css)) warnings.push('Nested selectors using & are not expanded in the rule summary; use fully qualified selectors for exact matching.');
   return { selectors, errors, warnings, ruleCount, declarationCount };
 }
