@@ -51,3 +51,26 @@ test('reports malformed CSS and exports a JSON diagnostic report', async ({ page
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('cascade-lens-report.json');
 });
+
+test('rejects duplicate import types without replacing the current workspace', async ({ page }) => {
+  await page.goto('');
+  const cssEditor = page.getByRole('textbox', { name: 'CSS source editor' });
+  const originalCss = await cssEditor.inputValue();
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'base.css', mimeType: 'text/css', buffer: Buffer.from('.base { color: red; }') },
+    { name: 'theme.css', mimeType: 'text/css', buffer: Buffer.from('.theme { color: blue; }') }
+  ]);
+  await expect(page.getByRole('alert')).toHaveText('Select no more than one CSS file at a time.');
+  await expect(cssEditor).toHaveValue(originalCss);
+});
+
+test('imports one HTML file and one CSS file together', async ({ page }) => {
+  await page.goto('');
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from('<main><h1>Imported document</h1></main>') },
+    { name: 'styles.css', mimeType: 'text/css', buffer: Buffer.from('h1 { color: rebeccapurple; }') }
+  ]);
+  await expect(page.getByRole('status')).toHaveText('Imported 2 files locally.');
+  await expect(page.getByRole('textbox', { name: 'HTML source editor' })).toHaveValue('<main><h1>Imported document</h1></main>');
+  await expect(page.getByRole('textbox', { name: 'CSS source editor' })).toHaveValue('h1 { color: rebeccapurple; }');
+});
