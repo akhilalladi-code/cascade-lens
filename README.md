@@ -32,9 +32,10 @@ Open the local URL printed by Vite.
 
 ## Quality checks
 
-Run the complete local check sequence:
+On a fresh machine, install the Playwright browser once, then run the complete check sequence:
 
 ~~~bash
+npx playwright install chromium
 npm run check
 ~~~
 
