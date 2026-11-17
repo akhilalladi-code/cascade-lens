@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+      # Switch to npm ci after a generated package-lock.json is committed.
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Dependency audit
