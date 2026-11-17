@@ -62,8 +62,12 @@ const previewScript = `(() => {
   send({ type: 'ready' });
 })();`;
 function makeSrcDoc(html: string, css: string) {
-  const csp = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; media-src data: blob:; form-action 'none'; base-uri 'none'";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}${css.replace(/<\/style/gi, '<\\/style')}</style></head><body>${html.replace(/<script[\s\S]*?<\/script>/gi, '')}<script>${previewScript}</script></body></html>`;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+  const csp = `default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' data:; font-src data:; script-src 'nonce-${nonce}'; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'`;
+  const cleanHtml = html
+    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script\\s*>/gi, '')
+    .replace(/<script\\b[^>]*\\/?\\s*>/gi, '');
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}${css.replace(/<\\/style/gi, '<\\\\/style')}</style></head><body>${cleanHtml}<script nonce="${nonce}">${previewScript}</script></body></html>`;
 }
 function Icon({ children }: { children: string }) { return <span className="icon" aria-hidden="true">{children}</span>; }
 function specificityLabel(s: [number, number, number]) { return <span className="specificity">{formatSpecificity(s)}</span>; }
@@ -79,15 +83,33 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [copied, setCopied] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [importNotice, setImportNotice] = useState('');
   const frame = useRef<HTMLIFrameElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const analysis: Analysis = useMemo(() => analyzeCss(css, selected ? { matches: selector => {
     return selected.matchedSelectors.includes(selector);
   } } : undefined), [css, selected]);
-  const onMessage = useCallback((event: MessageEvent) => {
-    if (event.source !== frame.current?.contentWindow) return;
-    if (!event.data || event.data.source !== 'cascade-lens-preview') return;
-    if (event.data.type === 'select') setSelected({ selector: event.data.selector, tag: event.data.tag, computed: event.data.computed || {}, matchedSelectors: event.data.matchedSelectors || [] });
+  const previewDocument = useMemo(() => makeSrcDoc(html, css), [html, css]);
+  const onMessage = useCallback((event: MessageEvent<unknown>) => {
+    if (event.source !== frame.current?.contentWindow || !event.data || typeof event.data !== 'object') return;
+    const data = event.data as Record<string, unknown>;
+    if (data.source !== 'cascade-lens-preview' || data.type !== 'select') return;
+    if (typeof data.selector !== 'string' || typeof data.tag !== 'string') return;
+    const rawComputed = data.computed && typeof data.computed === 'object' && !Array.isArray(data.computed)
+      ? data.computed as Record<string, unknown>
+      : {};
+    const computed = Object.fromEntries(
+      Object.entries(rawComputed).filter(([, value]) => typeof value === 'string').slice(0, 1000)
+    ) as Record<string, string>;
+    const matchedSelectors = Array.isArray(data.matchedSelectors)
+      ? data.matchedSelectors.filter((value): value is string => typeof value === 'string').slice(0, 500)
+      : [];
+    setSelected({
+      selector: data.selector.slice(0, 1000),
+      tag: data.tag.slice(0, 100),
+      computed,
+      matchedSelectors
+    });
   }, []);
   useEffect(() => { window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage); }, [onMessage]);
   const computedEntries = useMemo(() => Object.entries(selected?.computed || {}).filter(([key]) => !query || key.toLowerCase().includes(query.toLowerCase())).sort(([a], [b]) => a.localeCompare(b)), [selected, query]);
@@ -111,32 +133,59 @@ export default function App() {
     ].join('\n');
     const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `cascade-lens-report.${format}`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `cascade-lens-report.${format}`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const importFiles = async (files: FileList | null) => {
-    if (!files) return;
-    for (const file of Array.from(files)) {
-      const text = await file.text();
-      if (file.name.toLowerCase().endsWith('.css')) setCss(text);
-      else if (file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) setHtml(text);
+    if (!files?.length) return;
+    const selectedFiles = Array.from(files);
+    const maxImportBytes = 2 * 1024 * 1024;
+    setImportNotice('');
+    try {
+      for (const file of selectedFiles) {
+        const name = file.name.toLowerCase();
+        const supported = name.endsWith('.css') || name.endsWith('.html') || name.endsWith('.htm');
+        if (!supported) throw new Error(`${file.name}: choose an .html, .htm, or .css file.`);
+        if (file.size > maxImportBytes) throw new Error(`${file.name} exceeds the 2 MB per-file import limit.`);
+      }
+      const loaded = await Promise.all(selectedFiles.map(async file => ({ file, content: await file.text() })));
+      for (const { file, content } of loaded) {
+        if (file.name.toLowerCase().endsWith('.css')) setCss(content);
+        else setHtml(content);
+      }
+      setSelected(null);
+      setQuery('');
+      setImportNotice(`Imported ${loaded.length} file${loaded.length === 1 ? '' : 's'} locally.`);
+    } catch (error) {
+      setImportNotice(error instanceof Error ? error.message : 'Unable to read the selected file.');
     }
-    setSelected(null);
   };
   const copySelector = async () => {
     if (!selected) return;
-    await navigator.clipboard?.writeText(selected.selector);
-    setCopied(true); window.setTimeout(() => setCopied(false), 1500);
+    setImportNotice('');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
+      await navigator.clipboard.writeText(selected.selector);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+      setImportNotice('Clipboard access was blocked. Select and copy the selector manually.');
+    }
   };
   return <div className={`app ${theme}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="CascadeLens home"><span className="brand-mark"><i></i><i></i><i></i></span><span>Cascade<span className="brand-accent">Lens</span></span><span className="version">BETA</span></a>
       <div className="top-context"><span className="status-dot"></span> Local workspace <span className="context-divider">/</span> Untitled inspection</div>
       <div className="top-actions">
-        <button className="icon-button" title="Import HTML or CSS" onClick={() => fileInput.current?.click()}><Icon>⇧</Icon></button>
-        <input ref={fileInput} type="file" accept=".html,.htm,.css,text/html,text/css" multiple hidden onChange={e => void importFiles(e.target.files)} />
-        <button className="icon-button" title="Help" onClick={() => setShowHelp(!showHelp)}><Icon>?</Icon></button>
-        <button className="icon-button" title="Toggle theme" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon>{theme === 'dark' ? '☼' : '◐'}</Icon></button>
-        <button className="export-button" onClick={() => exportReport('json')}>Export report <span>↗</span></button>
+        <button className="icon-button" title="Import HTML or CSS" aria-label="Import HTML or CSS" onClick={() => fileInput.current?.click()}><Icon>⇧</Icon></button>
+        <input ref={fileInput} type="file" accept=".html,.htm,.css,text/html,text/css" multiple hidden onChange={e => { void importFiles(e.target.files); e.currentTarget.value = ''; }} />
+        <button className="icon-button" title="Help" aria-label="Help" onClick={() => setShowHelp(!showHelp)}><Icon>?</Icon></button>
+        <button className="icon-button" title="Toggle theme" aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon>{theme === 'dark' ? '☼' : '◐'}</Icon></button>
+        <button className="export-button" aria-label="Export JSON diagnostic report" onClick={() => exportReport('json')}>Export report <span>↗</span></button>
       </div>
     </header>
     <main className="workspace">
@@ -154,15 +203,15 @@ export default function App() {
         <div className="examples-row"><span className="examples-label">START WITH AN EXAMPLE</span>{examples.map(example => <button key={example.name} className="example-chip" onClick={() => loadExample(example)}>{example.name}</button>)}</div>
         <div className="editor-preview-grid">
           <section className="panel editor-panel">
-            <div className="panel-header"><div className="panel-title"><span className="panel-dot violet"></span> SOURCE EDITOR</div><div className="panel-actions"><button onClick={() => { setHtml(initial.html); setCss(initial.css); }}>Reset</button><span className="panel-divider"></span><span className="language-tag">{activeTab === 'css' ? 'CSS' : 'HTML'}</span></div></div>
+            <div className="panel-header"><div className="panel-title"><span className="panel-dot violet"></span> SOURCE EDITOR</div><div className="panel-actions"><button onClick={() => { setHtml(initial.html); setCss(initial.css); setSelected(null); setQuery(''); setImportNotice(''); }}>Reset</button><span className="panel-divider"></span><span className="language-tag">{activeTab === 'css' ? 'CSS' : 'HTML'}</span></div></div>
             <div className="editor-tabs"><button className={activeTab === 'html' ? 'selected' : ''} onClick={() => setActiveTab('html')}><span className="file-icon orange">〈/〉</span> index.html</button><button className={activeTab === 'css' ? 'selected' : ''} onClick={() => setActiveTab('css')}><span className="file-icon blue">✳</span> styles.css</button><span className="editor-hint">EDIT SOURCE</span></div>
-            <div className="editor-wrap"><div className="line-numbers" aria-hidden="true">{(activeTab === 'css' ? css : html).split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label={activeTab === 'css' ? 'CSS source editor' : 'HTML source editor'} spellCheck={false} value={activeTab === 'css' ? css : html} onChange={e => activeTab === 'css' ? setCss(e.target.value) : setHtml(e.target.value)} /></div>
+            <div className="editor-wrap"><div className="line-numbers" aria-hidden="true">{(activeTab === 'css' ? css : html).split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label={activeTab === 'css' ? 'CSS source editor' : 'HTML source editor'} spellCheck={false} value={activeTab === 'css' ? css : html} onChange={e => { if (activeTab === 'css') setCss(e.target.value); else setHtml(e.target.value); setSelected(null); }} /></div>
             <div className="editor-footer"><span><span className="status-dot"></span> Changes update live</span><span>{(activeTab === 'css' ? css : html).split('\n').length} lines</span></div>
           </section>
           <section className="panel preview-panel">
-            <div className="panel-header"><div className="panel-title"><span className="panel-dot green"></span> LIVE PREVIEW</div><div className="viewport-switch" role="group" aria-label="Preview viewport"><button className={viewport === 'wide' ? 'active' : ''} onClick={() => setViewport('wide')} title="Desktop">▰</button><button className={viewport === 'tablet' ? 'active' : ''} onClick={() => setViewport('tablet')} title="Tablet">▣</button><button className={viewport === 'mobile' ? 'active' : ''} onClick={() => setViewport('mobile')} title="Mobile">▯</button></div></div>
+            <div className="panel-header"><div className="panel-title"><span className="panel-dot green"></span> LIVE PREVIEW</div><div className="viewport-switch" role="group" aria-label="Preview viewport"><button className={viewport === 'wide' ? 'active' : ''} onClick={() => setViewport('wide')} title="Desktop" aria-label="Desktop viewport" aria-pressed={viewport === 'wide'}>▰</button><button className={viewport === 'tablet' ? 'active' : ''} onClick={() => setViewport('tablet')} title="Tablet" aria-label="Tablet viewport" aria-pressed={viewport === 'tablet'}>▣</button><button className={viewport === 'mobile' ? 'active' : ''} onClick={() => setViewport('mobile')} title="Mobile" aria-label="Mobile viewport" aria-pressed={viewport === 'mobile'}>▯</button></div></div>
             <div className="preview-toolbar"><div className="traffic-lights"><i></i><i></i><i></i></div><span>preview.local <b>·</b> isolated</span><span className="preview-lock">⌑</span></div>
-            <div className="preview-stage"><div className={`device-frame ${viewport}`}><iframe ref={frame} title="Isolated HTML and CSS preview" sandbox="allow-scripts" srcDoc={makeSrcDoc(html, css)} /></div></div>
+            <div className="preview-stage"><div className={`device-frame ${viewport}`}><iframe ref={frame} title="Isolated HTML and CSS preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={previewDocument} /></div></div>
             <div className="preview-footer"><span><span className="status-dot"></span> Sandbox active</span><span>Click an element to inspect ↗</span></div>
           </section>
         </div>
@@ -175,13 +224,13 @@ export default function App() {
       </section>
       <aside className="inspector">
         <div className="inspector-heading"><div><div className="eyebrow">ELEMENT INSPECTOR</div><h2>Details</h2></div><span className="inspector-target">⌖</span></div>
-        <div className="inspector-tabs"><button className={rightTab === 'styles' ? 'active' : ''} onClick={() => setRightTab('styles')}>Computed</button><button className={rightTab === 'rules' ? 'active' : ''} onClick={() => setRightTab('rules')}>Matched rules</button><button className={rightTab === 'diagnostics' ? 'active' : ''} onClick={() => setRightTab('diagnostics')}>Notes</button></div>
+        <div className="inspector-tabs"><button className={rightTab === 'styles' ? 'active' : ''} onClick={() => setRightTab('styles')} aria-pressed={rightTab === 'styles'}>Computed</button><button className={rightTab === 'rules' ? 'active' : ''} onClick={() => setRightTab('rules')} aria-pressed={rightTab === 'rules'}>Matched rules</button><button className={rightTab === 'diagnostics' ? 'active' : ''} onClick={() => setRightTab('diagnostics')} aria-pressed={rightTab === 'diagnostics'}>Notes</button></div>
         {rightTab === 'styles' && <div className="inspector-content">{selected ? <><div className="selected-element"><span className="element-icon">〈/〉</span><div><strong>{selected.tag}</strong><code>{selected.selector}</code></div><button title="Copy selector" onClick={() => void copySelector()}>{copied ? '✓' : '⧉'}</button></div><div className="property-search"><Icon>⌕</Icon><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter properties..." aria-label="Filter computed properties" /></div><div className="properties-list">{computedEntries.map(([key, value]) => <div className="property-row" key={key}><code>{key}</code><span>{value}</span></div>)}{computedEntries.length === 0 && <div className="empty-state">No properties match this filter.</div>}</div></> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>No element selected</strong><p>Click any element inside the live preview to inspect its computed styles and matching CSS rules.</p><span>WAITING FOR SELECTION</span></div>}</div>}
-        {rightTab === 'rules' && <div className="inspector-content">{selected ? <div className="matched-list">{sortedRules.filter(rule => rule.matched).map((rule, i) => <div className="matched-rule" key={rule.selector + i}><div><code>{rule.selector}</code>{specificityLabel(rule.specificity)}</div>{rule.declarations.map((decl, j) => <p key={j}><span>{decl.property}</span><b>{decl.value}{decl.important ? ' !important' : ''}</b></p>)}</div>)}{sortedRules.filter(rule => rule.matched).length === 0 && <div className="empty-state">No matching selectors found for the selected element.</div>}</div> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>Select an element first</strong><p>Matched declarations will appear here.</p></div>}</div>}
+        {rightTab === 'rules' && <div className="inspector-content">{selected ? <div className="matched-list">{sortedRules.filter(rule => rule.matched).map((rule, i) => <div className="matched-rule" key={rule.selector + i}><div><code>{rule.selector}</code>{specificityLabel(rule.specificity)}</div>{rule.declarations.map((decl, j) => <p key={j} title={`Source order ${decl.order}${decl.atRule.length ? ' · ' + decl.atRule.join(' / ') : ''}`}><span>{decl.property}<small>#{decl.order}{decl.atRule.length ? ' · ' + decl.atRule.join(' / ') : ''}</small></span><b>{decl.value}{decl.important ? ' !important' : ''}</b></p>)}</div>)}{sortedRules.filter(rule => rule.matched).length === 0 && <div className="empty-state">No matching selectors found for the selected element.</div>}</div> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>Select an element first</strong><p>Matched declarations will appear here.</p></div>}</div>}
         {rightTab === 'diagnostics' && <div className="inspector-content"><div className="diagnostic-card"><span className="diagnostic-icon">ⓘ</span><strong>Analysis scope</strong><p>Specificity is calculated from parsed selectors. The preview browser determines actual computed values.</p></div>{analysis.warnings.map(w => <div className="diagnostic-note" key={w}>{w}</div>)}{analysis.errors.map(e => <div className="diagnostic-note error" key={e}>{e}</div>)}<button className="download-md" onClick={() => exportReport('md')}>↓ Export Markdown report</button></div>}
         <div className="inspector-bottom"><div className="mini-status"><span className="status-dot"></span> Analysis ready</div><span>v1.0.0</span></div>
       </aside>
     </main>
-    <div className="toast-region" aria-live="polite">{copied ? 'Selector copied to clipboard' : ''}</div>
+    <div className="toast-region" role={importNotice.includes('exceeds') || importNotice.includes('choose') || importNotice.startsWith('Unable') || importNotice.startsWith('Clipboard') ? 'alert' : 'status'} aria-live="polite">{importNotice || (copied ? 'Selector copied to clipboard' : '')}</div>
   </div>;
 }
