@@ -63,11 +63,11 @@ const previewScript = `(() => {
 })();`;
 function makeSrcDoc(html: string, css: string) {
   const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
-  const csp = `default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' data:; font-src data:; script-src 'nonce-${nonce}'; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'`;
+  const csp = \`default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' data:; font-src data:; script-src 'nonce-\${nonce}'; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'\`;
   const cleanHtml = html
-    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script\\s*>/gi, '')
-    .replace(/<script\\b[^>]*\\/?\\s*>/gi, '');
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}${css.replace(/<\\/style/gi, '<\\\\/style')}</style></head><body>${cleanHtml}<script nonce="${nonce}">${previewScript}</script></body></html>`;
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script\b[^>]*\/?\s*>/gi, '');
+  return \`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="\${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}\${css.replace(/<\/style/gi, '<\\/style')}</style></head><body>\${cleanHtml}<script nonce="\${nonce}">\${previewScript}</script></body></html>\`;
 }
 function Icon({ children }: { children: string }) { return <span className="icon" aria-hidden="true">{children}</span>; }
 function specificityLabel(s: [number, number, number]) { return <span className="specificity">{formatSpecificity(s)}</span>; }
