@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeCss, compareSpecificity, formatSpecificity, type Analysis } from './lib/analyze';
+import { validateImportFiles } from './lib/import-validation';
 
 type Example = { name: string; html: string; css: string; note: string };
 const examples: Example[] = [
@@ -150,14 +151,12 @@ export default function App() {
   const importFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     const selectedFiles = Array.from(files);
-    const maxImportBytes = 2 * 1024 * 1024;
     setImportNotice('');
     try {
-      for (const file of selectedFiles) {
-        const name = file.name.toLowerCase();
-        const supported = name.endsWith('.css') || name.endsWith('.html') || name.endsWith('.htm');
-        if (!supported) throw new Error(`${file.name}: choose an .html, .htm, or .css file.`);
-        if (file.size > maxImportBytes) throw new Error(`${file.name} exceeds the 2 MB per-file import limit.`);
+      const validationError = validateImportFiles(selectedFiles);
+      if (validationError) {
+        setImportNotice(validationError);
+        return;
       }
       const loaded = await Promise.all(selectedFiles.map(async file => ({ file, content: await file.text() })));
       for (const { file, content } of loaded) {
