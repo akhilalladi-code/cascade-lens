@@ -118,6 +118,6 @@ export function analyzeCss(css: string, selected?: { matches(selector: string): 
   if (css.includes('::')) warnings.push('Pseudo-element styles are listed when parseable but cannot be selected directly in the preview.');
   if (/@(?:-[\w]+-)?keyframes\b/i.test(css)) warnings.push('Keyframe steps are rendered by the browser and are excluded from element-selector matching.');
   if (/@layer\b/i.test(css)) warnings.push('Cascade layer context is shown, but layer precedence is not independently simulated; computed values come from the browser.');
-  if (/(^|[,{]\s*)&/.test(css)) warnings.push('Nested selectors using & are not expanded in the rule summary; use fully qualified selectors for exact matching.');
+  if (/(^|[,{;]\s*&/.test(css)) warnings.push('Nested selectors using & are not expanded in the rule summary; use fully qualified selectors for exact matching.');
   return { selectors, errors, warnings, ruleCount, declarationCount };
 }
