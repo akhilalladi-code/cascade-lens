@@ -2,57 +2,87 @@
 
 **Understand why your CSS looks the way it does.**
 
-CascadeLens is a local-first CSS cascade debugger. Paste HTML and CSS, inspect a live isolated preview, select elements, explore matching selectors and specificity, and review computed styles without sending your source to a server.
+CascadeLens is a local-first CSS debugging workspace. Edit HTML and CSS, inspect an isolated live preview, select an element, and trace the selectors that match it. The browser supplies the computed styles; CascadeLens adds a readable explanation of specificity, declaration order and surrounding at-rule context.
 
-## Features
+**Live app:** https://akhilalladi-code.github.io/cascade-lens/
 
-- Live HTML and CSS editing with a sandboxed preview.
-- Click an element in the preview to inspect its computed styles.
-- Selector matching and specificity breakdown for supported selectors.
-- Declaration and source-order inspection, including `!important` and cascade-layer context.
-- Desktop, tablet and mobile viewport presets.
-- Built-in examples for specificity, inheritance, important declarations, layers and media queries.
-- Import HTML/CSS files and export diagnostic reports as Markdown or JSON.
-- Local-only processing: no account, API key, backend or upload required.
+## What you can do
+
+- Edit HTML and CSS side by side with an updating preview.
+- Select preview elements to inspect their computed CSS properties.
+- See matching author selectors and their specificity scores.
+- Review declarations, !important, source order and nested @media / @supports / @layer context.
+- Switch between desktop, tablet and mobile preview widths.
+- Load focused examples for specificity, inheritance, !important, media queries and cascade layers.
+- Import .html, .htm and .css files (2 MB per file limit).
+- Export a diagnostic report as JSON or Markdown.
+- Use a dark or light workspace theme.
+- Work without an account, API key or application backend.
 
 ## Run locally
 
-Requirements: Node.js 20 or newer.
+Requirements: Node.js 20 or newer and npm.
 
-```bash
+~~~bash
 npm install
 npm run dev
-```
+~~~
 
 Open the local URL printed by Vite.
 
 ## Quality checks
 
-```bash
-npm run typecheck
-npm run test
-npm run build
-```
+Run the complete local check sequence:
+
+~~~bash
+npm run check
+~~~
+
+This runs ESLint, TypeScript checks for the app and tooling, Vitest unit tests, a production build, a built-asset smoke test and Playwright browser tests.
+
+For the browser tests on a fresh machine, install Chromium once:
+
+~~~bash
+npx playwright install chromium
+npm run test:e2e
+~~~
 
 ## Deploy to GitHub Pages
 
-The included GitHub Actions workflow builds and publishes the app to GitHub Pages. In the repository settings, ensure **Settings → Pages → Build and deployment → Source** is set to **GitHub Actions**.
+The GitHub Actions workflow runs the full quality suite for pull requests and deploys only after a successful push to main. In repository settings, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
 
-The Vite base path is configured for the repository URL:
+The Vite base path is configured for:
 
-`https://akhilalladi-code.github.io/cascade-lens/`
+~~~text
+https://akhilalladi-code.github.io/cascade-lens/
+~~~
 
-## How analysis works and known limits
+## Privacy and preview security
 
-CascadeLens combines PostCSS parsing, selector specificity analysis, element matching in the preview frame, and the browser's computed-style engine. Browser computed styles are authoritative for the rendered result; the app's declaration view is an explanatory aid, not a replacement for browser DevTools' full cascade engine.
+HTML and CSS are processed in your browser. CascadeLens does not upload source files to an application server. Imported files are read locally and limited to 2 MB each.
 
-Some behavior cannot be completely reconstructed from pasted source alone. Cross-origin stylesheets, closed shadow roots, browser extensions, user-agent internals, pseudo-element inspection, dynamically loaded resources, and complex interactions among origins, animations, transitions and cascade layers may be incomplete or unavailable. CascadeLens calls out unsupported or uncertain cases rather than claiming full DevTools parity.
+The preview runs in a sandboxed iframe without same-origin access. A per-document nonce authorizes only the inspector script; user-provided script elements are removed and inline event handlers are blocked by the preview Content Security Policy. Network connections, external frames, plugins and form submissions are disabled inside the preview. The outer app also avoids third-party font requests.
 
-Preview content runs in a sandboxed iframe with a restrictive Content Security Policy. Do not use the preview as a security boundary for opening untrusted files in a browser you do not control; treat imported source as untrusted.
+Treat imported source as untrusted. The preview is a safer inspection surface, not a general-purpose security sandbox for arbitrary hostile documents.
 
-## Privacy
+## Analysis scope and known limits
 
-Your HTML and CSS are processed in your browser. CascadeLens does not transmit your source to a CascadeLens server.
+CascadeLens is an explanatory aid, not a replacement for the browser's full DevTools cascade engine.
+
+- The browser's computed-style values are authoritative for the rendered result.
+- Specificity and declaration order are summarized, but the app does not independently simulate every cascade origin, transition, animation, layer-precedence or scope-proximity rule.
+- Layer and conditional at-rule context is displayed; activation is evaluated by the preview browser.
+- CSS nesting selectors using & are not expanded in the rule summary.
+- Keyframe steps are excluded from element-selector matching.
+- Pseudo-elements cannot be selected directly.
+- External resources and @import stylesheets are blocked or may not load in the isolated preview.
+- Closed shadow roots, browser extensions, user-agent internals and dynamically loaded application styles are outside the inspection scope.
+
+When a case is outside this scope, use the computed values shown by the browser and verify complex cascade behavior in the browser's native DevTools.
+
+## Technology
+
+React 19, TypeScript, Vite, PostCSS, postcss-selector-parser, Vitest, ESLint and Playwright.
 
 ## License
 
