@@ -75,6 +75,7 @@ function specificityLabel(s: [number, number, number]) { return <span className=
 export default function App() {
   const [html, setHtml] = useState(initial.html);
   const [css, setCss] = useState(initial.css);
+  const [activeExample, setActiveExample] = useState<Example | null>(initial);
   const [selected, setSelected] = useState<{ selector: string; tag: string; computed: Record<string, string>; matchedSelectors: string[] } | null>(null);
   const [viewport, setViewport] = useState('wide');
   const [activeTab, setActiveTab] = useState<'html' | 'css'>('css');
@@ -114,7 +115,14 @@ export default function App() {
   useEffect(() => { window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage); }, [onMessage]);
   const computedEntries = useMemo(() => Object.entries(selected?.computed || {}).filter(([key]) => !query || key.toLowerCase().includes(query.toLowerCase())).sort(([a], [b]) => a.localeCompare(b)), [selected, query]);
   const sortedRules = useMemo(() => [...analysis.selectors].sort((a, b) => Number(b.matched) - Number(a.matched) || compareSpecificity(b.specificity, a.specificity)), [analysis]);
-  const loadExample = (example: Example) => { setHtml(example.html); setCss(example.css); setSelected(null); };
+  const loadExample = (example: Example) => {
+    setHtml(example.html);
+    setCss(example.css);
+    setSelected(null);
+    setQuery('');
+    setActiveExample(example);
+    setImportNotice('');
+  };
   const report = useMemo(() => ({
     product: 'CascadeLens',
     generatedAt: new Date().toISOString(),
@@ -200,12 +208,13 @@ export default function App() {
       <section className="main-area">
         <div className="page-heading"><div><div className="eyebrow">CSS DEBUGGING WORKSPACE</div><h1>Inspect the cascade<span>.</span></h1><p>Trace styles, understand specificity, and see what wins.</p></div><div className="heading-meta"><span className="live-indicator"></span> LIVE PREVIEW</div></div>
         {showHelp && <div className="help-banner"><strong>Quick start</strong><span>Choose an example, edit the HTML or CSS, then click any element in the preview to inspect its computed styles and matching selectors.</span><button onClick={() => setShowHelp(false)}>Dismiss ×</button></div>}
-        <div className="examples-row"><span className="examples-label">START WITH AN EXAMPLE</span>{examples.map(example => <button key={example.name} className="example-chip" onClick={() => loadExample(example)}>{example.name}</button>)}</div>
+        <div className="examples-row"><span className="examples-label">START WITH AN EXAMPLE</span>{examples.map(example => <button key={example.name} className={`example-chip ${activeExample?.name === example.name ? 'active' : ''}`} aria-pressed={activeExample?.name === example.name} onClick={() => loadExample(example)}>{example.name}</button>)}</div>
+        <p className="example-note" aria-live="polite">{activeExample?.note || 'Custom workspace · edit the source to inspect your own CSS.'}</p>
         <div className="editor-preview-grid">
           <section className="panel editor-panel">
-            <div className="panel-header"><div className="panel-title"><span className="panel-dot violet"></span> SOURCE EDITOR</div><div className="panel-actions"><button onClick={() => { setHtml(initial.html); setCss(initial.css); setSelected(null); setQuery(''); setImportNotice(''); }}>Reset</button><span className="panel-divider"></span><span className="language-tag">{activeTab === 'css' ? 'CSS' : 'HTML'}</span></div></div>
+            <div className="panel-header"><div className="panel-title"><span className="panel-dot violet"></span> SOURCE EDITOR</div><div className="panel-actions"><button onClick={() => { setHtml(initial.html); setCss(initial.css); setSelected(null); setQuery(''); setActiveExample(initial); setImportNotice(''); }}>Reset</button><span className="panel-divider"></span><span className="language-tag">{activeTab === 'css' ? 'CSS' : 'HTML'}</span></div></div>
             <div className="editor-tabs"><button className={activeTab === 'html' ? 'selected' : ''} onClick={() => setActiveTab('html')}><span className="file-icon orange">〈/〉</span> index.html</button><button className={activeTab === 'css' ? 'selected' : ''} onClick={() => setActiveTab('css')}><span className="file-icon blue">✳</span> styles.css</button><span className="editor-hint">EDIT SOURCE</span></div>
-            <div className="editor-wrap"><div className="line-numbers" aria-hidden="true">{(activeTab === 'css' ? css : html).split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label={activeTab === 'css' ? 'CSS source editor' : 'HTML source editor'} spellCheck={false} value={activeTab === 'css' ? css : html} onChange={e => { if (activeTab === 'css') setCss(e.target.value); else setHtml(e.target.value); setSelected(null); }} /></div>
+            <div className="editor-wrap"><div className="line-numbers" aria-hidden="true">{(activeTab === 'css' ? css : html).split('\n').map((_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label={activeTab === 'css' ? 'CSS source editor' : 'HTML source editor'} spellCheck={false} value={activeTab === 'css' ? css : html} onChange={e => { if (activeTab === 'css') setCss(e.target.value); else setHtml(e.target.value); setSelected(null); setActiveExample(null); }} /></div>
             <div className="editor-footer"><span><span className="status-dot"></span> Changes update live</span><span>{(activeTab === 'css' ? css : html).split('\n').length} lines</span></div>
           </section>
           <section className="panel preview-panel">
@@ -225,12 +234,12 @@ export default function App() {
       <aside className="inspector">
         <div className="inspector-heading"><div><div className="eyebrow">ELEMENT INSPECTOR</div><h2>Details</h2></div><span className="inspector-target">⌖</span></div>
         <div className="inspector-tabs"><button className={rightTab === 'styles' ? 'active' : ''} onClick={() => setRightTab('styles')} aria-pressed={rightTab === 'styles'}>Computed</button><button className={rightTab === 'rules' ? 'active' : ''} onClick={() => setRightTab('rules')} aria-pressed={rightTab === 'rules'}>Matched rules</button><button className={rightTab === 'diagnostics' ? 'active' : ''} onClick={() => setRightTab('diagnostics')} aria-pressed={rightTab === 'diagnostics'}>Notes</button></div>
-        {rightTab === 'styles' && <div className="inspector-content">{selected ? <><div className="selected-element"><span className="element-icon">〈/〉</span><div><strong>{selected.tag}</strong><code>{selected.selector}</code></div><button title="Copy selector" onClick={() => void copySelector()}>{copied ? '✓' : '⧉'}</button></div><div className="property-search"><Icon>⌕</Icon><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter properties..." aria-label="Filter computed properties" /></div><div className="properties-list">{computedEntries.map(([key, value]) => <div className="property-row" key={key}><code>{key}</code><span>{value}</span></div>)}{computedEntries.length === 0 && <div className="empty-state">No properties match this filter.</div>}</div></> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>No element selected</strong><p>Click any element inside the live preview to inspect its computed styles and matching CSS rules.</p><span>WAITING FOR SELECTION</span></div>}</div>}
+        {rightTab === 'styles' && <div className="inspector-content">{selected ? <><div className="selected-element"><span className="element-icon">〈/〉</span><div><strong>{selected.tag}</strong><code>{selected.selector}</code></div><button title="Copy selector" onClick={() => void copySelector()} aria-label="Copy selected element selector">{copied ? '✓' : '⧉'}</button></div><div className="property-search"><Icon>⌕</Icon><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter properties..." aria-label="Filter computed properties" /></div><div className="properties-list">{computedEntries.map(([key, value]) => <div className="property-row" key={key}><code>{key}</code><span>{value}</span></div>)}{computedEntries.length === 0 && <div className="empty-state">No properties match this filter.</div>}</div></> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>No element selected</strong><p>Click any element inside the live preview to inspect its computed styles and matching CSS rules.</p><span>WAITING FOR SELECTION</span></div>}</div>}
         {rightTab === 'rules' && <div className="inspector-content">{selected ? <div className="matched-list">{sortedRules.filter(rule => rule.matched).map((rule, i) => <div className="matched-rule" key={rule.selector + i}><div><code>{rule.selector}</code>{specificityLabel(rule.specificity)}</div>{rule.declarations.map((decl, j) => <p key={j} title={`Source order ${decl.order}${decl.atRule.length ? ' · ' + decl.atRule.join(' / ') : ''}`}><span>{decl.property}<small>#{decl.order}{decl.atRule.length ? ' · ' + decl.atRule.join(' / ') : ''}</small></span><b>{decl.value}{decl.important ? ' !important' : ''}</b></p>)}</div>)}{sortedRules.filter(rule => rule.matched).length === 0 && <div className="empty-state">No matching selectors found for the selected element.</div>}</div> : <div className="inspector-empty"><div className="target-illustration">⌖</div><strong>Select an element first</strong><p>Matched declarations will appear here.</p></div>}</div>}
         {rightTab === 'diagnostics' && <div className="inspector-content"><div className="diagnostic-card"><span className="diagnostic-icon">ⓘ</span><strong>Analysis scope</strong><p>Specificity is calculated from parsed selectors. The preview browser determines actual computed values.</p></div>{analysis.warnings.map(w => <div className="diagnostic-note" key={w}>{w}</div>)}{analysis.errors.map(e => <div className="diagnostic-note error" key={e}>{e}</div>)}<button className="download-md" onClick={() => exportReport('md')}>↓ Export Markdown report</button></div>}
         <div className="inspector-bottom"><div className="mini-status"><span className="status-dot"></span> Analysis ready</div><span>v1.0.0</span></div>
       </aside>
     </main>
-    <div className="toast-region" role={importNotice.includes('exceeds') || importNotice.includes('choose') || importNotice.startsWith('Unable') || importNotice.startsWith('Clipboard') ? 'alert' : 'status'} aria-live="polite">{importNotice || (copied ? 'Selector copied to clipboard' : '')}</div>
+    <div className="toast-region" role={importNotice && !importNotice.startsWith('Imported') ? 'alert' : 'status'} aria-live="polite">{importNotice || (copied ? 'Selector copied to clipboard' : '')}</div>
   </div>;
 }
