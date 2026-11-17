@@ -21,7 +21,7 @@ CascadeLens is a local-first CSS debugging workspace. Edit HTML and CSS, inspect
 
 ## Run locally
 
-Requirements: Node.js 20 or newer and npm.
+Requirements: Node.js 22.12 or newer and npm.
 
 ~~~bash
 npm install
