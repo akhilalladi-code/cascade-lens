@@ -43,3 +43,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible 
     transition-duration: .01ms !important;
   }
 }
+
+.example-note {
+  margin: -5px 0 14px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.example-chip.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: #9a8cff12;
+}
