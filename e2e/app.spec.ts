@@ -71,6 +71,7 @@ test('imports one HTML file and one CSS file together', async ({ page }) => {
     { name: 'styles.css', mimeType: 'text/css', buffer: Buffer.from('h1 { color: rebeccapurple; }') }
   ]);
   await expect(page.getByRole('status')).toHaveText('Imported 2 files locally.');
-  await expect(page.getByRole('textbox', { name: 'HTML source editor' })).toHaveValue('<main><h1>Imported document</h1></main>');
   await expect(page.getByRole('textbox', { name: 'CSS source editor' })).toHaveValue('h1 { color: rebeccapurple; }');
+  await page.getByRole('button', { name: /index\\.html/ }).click();
+  await expect(page.getByRole('textbox', { name: 'HTML source editor' })).toHaveValue('<main><h1>Imported document</h1></main>');
 });
