@@ -1,22 +1,25 @@
-name: Deploy CascadeLens to GitHub Pages
+name: Quality and deploy CascadeLens
 
 on:
-  push:
+  pull_request:
     branches: [main]
+  push:
+    branches: [main, 'feat/**']
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: cascade-lens-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  quality:
+    name: Quality, security and browser tests
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -25,23 +28,41 @@ jobs:
         with:
           node-version: 24
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Lint
+        run: npm run lint
       - name: Type check
         run: npm run typecheck
       - name: Unit tests
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Built-site smoke test
+        run: npm run smoke
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        run: npm run test:e2e
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v4
         with:
           path: dist
+
   deploy:
+    name: Deploy GitHub Pages
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: quality
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-24.04
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
