@@ -35,5 +35,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.4.0",
     "typescript-eslint": "^8.44.1"
-  }
+  },
+  "description": "A local-first CSS cascade debugger for selector matching, specificity, source order and computed styles.",
+  "license": "MIT"
 }
