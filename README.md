@@ -6,6 +6,13 @@ CascadeLens is a local-first CSS debugging workspace. Edit HTML and CSS, inspect
 
 **Live app:** https://akhilalladi-code.github.io/cascade-lens/
 
+## Privacy and support
+
+- [Privacy statement](https://akhilalladi-code.github.io/cascade-lens/privacy.html)
+- [Report a bug or request help](https://github.com/akhilalladi-code/cascade-lens/issues)
+
+The application does not require an account and does not send imported HTML or CSS to an application backend. Source edits are held in the current browser page and are not saved automatically; refresh or closing the page can discard unsaved work. GitHub Pages may process ordinary hosting request data under GitHub's own privacy terms.
+
 ## What you can do
 
 - Edit HTML and CSS side by side with an updating preview.
