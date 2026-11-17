@@ -18,7 +18,7 @@ for (const asset of localAssets) {
   await access(join(dist, asset));
 }
 
-for (const asset of ['favicon.svg', 'og-image.svg', 'robots.txt', 'sitemap.xml']) {
+for (const asset of ['favicon.svg', 'og-image.svg', 'robots.txt', 'sitemap.xml', '404.html', 'privacy.html']) {
   await access(join(dist, asset));
 }
 
